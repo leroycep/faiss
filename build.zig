@@ -5,63 +5,45 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // shared library
-    const faiss_avx2_shared = b.addSharedLibrary(.{
-        .name = "faiss",
-        .target = target,
-        .optimize = optimize,
-    });
-    faiss_avx2_shared.addCSourceFiles(.{
-        .files = &source_files,
-        .flags = &.{ "-mavx2", "-mfma", "-mf16c", "-mpopcnt" },
-    });
-    if (target.result.os.tag != .windows) {
-        faiss_avx2_shared.addCSourceFiles(.{ .files = &.{
-            "faiss/invlists/OnDiskInvertedLists.cpp",
-        } });
-    }
-    faiss_avx2_shared.defineCMacro("FINTEGER", "int");
-    faiss_avx2_shared.linkSystemLibrary2("omp", .{});
-    faiss_avx2_shared.linkSystemLibrary2("blas", .{});
-    faiss_avx2_shared.linkSystemLibrary2("lapack", .{});
-    faiss_avx2_shared.linkLibCpp();
-    faiss_avx2_shared.addIncludePath(.{ .path = "./" });
-    faiss_avx2_shared.installHeadersDirectoryOptions(.{
-        .source_dir = .{ .path = "faiss" },
-        .install_dir = .header,
-        .install_subdir = "faiss",
-        .include_extensions = &.{"h"},
-    });
-    b.installArtifact(faiss_avx2_shared);
+    const linkage = b.option(std.Build.Step.Compile.Linkage, "linkage", "Whether to link statically or dynamically (default: static)") orelse .static;
+    const avx2 = b.option(bool, "avx2", "Enable avx2 instructions (default: true)") orelse true;
 
-    // static library
-    const faiss_avx2_static = b.addStaticLibrary(.{
+    const faiss = std.Build.Step.Compile.create(b, .{
         .name = "faiss",
-        .target = target,
-        .optimize = optimize,
+        .root_module = .{
+            .target = target,
+            .optimize = optimize,
+            .link_libcpp = true,
+        },
+        .kind = .lib,
+        .linkage = linkage,
+        .version = std.SemanticVersion{ .major = 1, .minor = 7, .patch = 4 },
     });
-    faiss_avx2_static.addCSourceFiles(.{
+
+    faiss.addCSourceFiles(.{
         .files = &source_files,
-        .flags = &.{ "-mavx2", "-mfma", "-mf16c", "-mpopcnt" },
+        .flags = if (avx2)
+            &.{ "-mavx2", "-mfma", "-mf16c", "-mpopcnt" }
+        else
+            &.{},
     });
     if (target.result.os.tag != .windows) {
-        faiss_avx2_static.addCSourceFiles(.{ .files = &.{
+        faiss.addCSourceFiles(.{ .files = &.{
             "faiss/invlists/OnDiskInvertedLists.cpp",
         } });
     }
-    faiss_avx2_static.defineCMacro("FINTEGER", "int");
-    faiss_avx2_static.linkSystemLibrary2("omp", .{});
-    faiss_avx2_static.linkSystemLibrary2("blas", .{});
-    faiss_avx2_static.linkSystemLibrary2("lapack", .{});
-    faiss_avx2_static.linkLibCpp();
-    faiss_avx2_static.addIncludePath(.{ .path = "./" });
-    faiss_avx2_static.installHeadersDirectoryOptions(.{
+    faiss.defineCMacro("FINTEGER", "int");
+    faiss.linkSystemLibrary2("omp", .{});
+    faiss.linkSystemLibrary2("blas", .{});
+    faiss.linkSystemLibrary2("lapack", .{});
+    faiss.addIncludePath(.{ .path = "./" });
+    faiss.installHeadersDirectoryOptions(.{
         .source_dir = .{ .path = "faiss" },
         .install_dir = .header,
         .install_subdir = "faiss",
         .include_extensions = &.{"h"},
     });
-    b.installArtifact(faiss_avx2_static);
+    b.installArtifact(faiss);
 }
 
 const source_files = [_][]const u8{
